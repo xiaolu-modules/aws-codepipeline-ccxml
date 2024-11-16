@@ -6,6 +6,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/codepipeline"
+	"github.com/aws/aws-sdk-go-v2/service/codepipeline/types"
 )
 
 // PipelineState captures the current state of a pipeline
@@ -13,7 +14,7 @@ type PipelineState struct {
 	Name        string
 	Created     time.Time
 	Region      string
-	StageStates []codepipeline.StageState
+	StageStates []types.StageState
 }
 
 // PipelineStateProvider provides access to the current state of a pipeline
@@ -29,11 +30,9 @@ type AWSPipelineStateProvider struct {
 
 // GetPipelineState provides access to the current state of a pipeline using the AWS API
 func (p *AWSPipelineStateProvider) GetPipelineState() ([]PipelineState, error) {
-	svc := codepipeline.New(p.config)
+	svc := codepipeline.NewFromConfig(p.config)
 
-	req := svc.ListPipelinesRequest(&codepipeline.ListPipelinesInput{})
-	resp, err := req.Send(context.Background())
-
+	resp, err := svc.ListPipelines(context.Background(), &codepipeline.ListPipelinesInput{})
 	if err != nil {
 		return nil, err
 	}
@@ -41,11 +40,9 @@ func (p *AWSPipelineStateProvider) GetPipelineState() ([]PipelineState, error) {
 	pipelineStates := make([]PipelineState, 0)
 
 	for _, pipeline := range resp.Pipelines {
-		req := svc.GetPipelineStateRequest(&codepipeline.GetPipelineStateInput{
+		stageStates, err := svc.GetPipelineState(context.Background(), &codepipeline.GetPipelineStateInput{
 			Name: pipeline.Name,
 		})
-
-		stageStates, err := req.Send(context.Background())
 		if err != nil {
 			return nil, err
 		}

@@ -7,7 +7,7 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-	"github.com/aws/aws-sdk-go-v2/aws/external"
+	"github.com/aws/aws-sdk-go-v2/config"
 	"gopkg.in/alecthomas/kingpin.v2"
 )
 
@@ -34,7 +34,7 @@ func updateProjectsStatus(stateProvider PipelineStateProvider, persistenceProvid
 
 // HandleRequest is triggered when the Lambda receives an event
 func HandleRequest(ctx context.Context, event events.CodePipelineEvent) (string, error) {
-	cfg, err := external.LoadDefaultAWSConfig()
+	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -53,7 +53,7 @@ func HandleRequest(ctx context.Context, event events.CodePipelineEvent) (string,
 func runLocally() error {
 	var persistenceProvider PersistenceProvider
 
-	cfg, err := external.LoadDefaultAWSConfig()
+	cfg, err := config.LoadDefaultConfig(context.Background())
 	if err != nil {
 		return err
 	}

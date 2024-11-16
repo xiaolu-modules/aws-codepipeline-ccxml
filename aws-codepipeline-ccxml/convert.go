@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/service/codepipeline"
+	"github.com/aws/aws-sdk-go-v2/service/codepipeline/types"
 )
 
 // Convert the pipeline states to Projects
@@ -26,19 +26,19 @@ func Convert(pipelineStates []PipelineState) []Project {
 	return projects
 }
 
-func buildName(name string, stage codepipeline.StageState) string {
+func buildName(name string, stage types.StageState) string {
 	return fmt.Sprintf("%s :: %s", name, *stage.StageName)
 }
 
-func buildLastBuildStatus(stage codepipeline.StageState) LastBuildStatus {
+func buildLastBuildStatus(stage types.StageState) LastBuildStatus {
 	if stage.LatestExecution == nil {
 		return LastBuildStatusUnknown
 	}
 
 	switch stage.LatestExecution.Status {
-	case codepipeline.StageExecutionStatusFailed:
+	case types.StageExecutionStatusFailed:
 		return LastBuildStatusFailure
-	case codepipeline.StageExecutionStatusSucceeded:
+	case types.StageExecutionStatusSucceeded:
 		return LastBuildStatusSuccess
 	}
 
@@ -46,15 +46,15 @@ func buildLastBuildStatus(stage codepipeline.StageState) LastBuildStatus {
 	return LastBuildStatusSuccess
 }
 
-func buildActivity(stage codepipeline.StageState) Activity {
-	if stage.LatestExecution != nil && stage.LatestExecution.Status == codepipeline.StageExecutionStatusInProgress {
+func buildActivity(stage types.StageState) Activity {
+	if stage.LatestExecution != nil && stage.LatestExecution.Status == types.StageExecutionStatusInProgress {
 		return ActivityBuilding
 	}
 
 	return ActivitySleeping
 }
 
-func buildLastBuildTime(created time.Time, stage codepipeline.StageState) string {
+func buildLastBuildTime(created time.Time, stage types.StageState) string {
 	if stage.ActionStates == nil || len(stage.ActionStates) == 0 ||
 		stage.ActionStates[0].LatestExecution == nil || stage.ActionStates[0].LatestExecution.LastStatusChange == nil {
 		// assume last action was time pipeline was created

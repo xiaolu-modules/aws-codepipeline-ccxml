@@ -67,7 +67,7 @@ resource "null_resource" "cctest" {
   provisioner "local-exec" {
     working_dir = path.module
     command     = <<EOF
-      CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -mod=vendor -tags lambda.norpc -o bootstrap && \
+      CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -mod=vendor -o bootstrap && \
       chmod +x bootstrap
     EOF
   }

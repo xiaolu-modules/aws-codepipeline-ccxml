@@ -13,85 +13,88 @@ import (
 
 var (
 	pipelineStateProvider *AWSPipelineStateProvider
-	persistenceProvider *AWSS3PersistenceProvider
+	persistenceProvider   *AWSS3PersistenceProvider
 )
 
-func init() {
+func initProviders() error {
 	start := time.Now()
 	fmt.Printf("Starting initialization at: %v\n", start)
-	
-	// 在初始化阶段创建 AWS 客户端
-	cfg, err := config.LoadDefaultConfig(context.TODO())
+
+	cfg, err := config.LoadDefaultConfig(context.Background())
 	if err != nil {
-		fmt.Printf("unable to load SDK config: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("unable to load SDK config: %v", err)
 	}
 	fmt.Printf("Config loaded, time elapsed: %v\n", time.Since(start))
 
-	// 获取环境变量
 	bucket := os.Getenv("BUCKET")
 	key := os.Getenv("KEY")
 	fmt.Printf("Environment variables - Bucket: %s, Key: %s\n", bucket, key)
-	
+
 	if bucket == "" || key == "" {
-		fmt.Println("BUCKET and KEY environment variables must be set")
-		os.Exit(1)
+		return fmt.Errorf("BUCKET and KEY environment variables must be set")
 	}
 
-	// 初始化 providers
 	pipelineStateProvider = &AWSPipelineStateProvider{cfg}
 	persistenceProvider = &AWSS3PersistenceProvider{
-		cfg,
-		bucket,
-		key,
+		config: cfg,
+		bucket: bucket,
+		key:    key,
 	}
 	fmt.Printf("Successfully initialized providers, total init time: %v\n", time.Since(start))
+	return nil
 }
 
 func updateProjectsStatus(stateProvider PipelineStateProvider, persistenceProvider PersistenceProvider) error {
 	start := time.Now()
 	fmt.Printf("Starting updateProjectsStatus at: %v\n", start)
-	
-	// 跟踪获取pipeline状态的时间
+
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancel()
+
 	pipelineFetchStart := time.Now()
 	fmt.Println("Fetching pipeline states...")
 	pipelineStates, err := stateProvider.GetPipelineState()
 	if err != nil {
-		fmt.Printf("Error getting pipeline state: %v\n", err)
-		return fmt.Errorf("unable to get state pipeline state: %v", err)
+		return fmt.Errorf("unable to get pipeline state: %v", err)
 	}
-	fmt.Printf("Pipeline states fetched in %v, got %d states\n", 
+	fmt.Printf("Pipeline states fetched in %v, got %d states\n",
 		time.Since(pipelineFetchStart), len(pipelineStates))
 
-	// 跟踪转换时间
 	convertStart := time.Now()
 	fmt.Println("Converting pipeline states to projects...")
 	projects := Convert(pipelineStates)
-	fmt.Printf("Conversion completed in %v, got %d projects\n", 
+	fmt.Printf("Conversion completed in %v, got %d projects\n",
 		time.Since(convertStart), len(projects))
-	
-	// 跟踪持久化时间
-	persistStart := time.Now()
-	fmt.Println("Persisting projects to S3...")
-	err = persistenceProvider.PersistProjects(projects)
-	if err != nil {
-		fmt.Printf("Error persisting projects: %v\n", err)
-		return fmt.Errorf("unable to persist projects data: %v", err)
+
+	select {
+	case <-ctx.Done():
+		return fmt.Errorf("operation timed out")
+	default:
+		persistStart := time.Now()
+		fmt.Println("Persisting projects to S3...")
+		if err := persistenceProvider.PersistProjects(projects); err != nil {
+			return fmt.Errorf("unable to persist projects data: %v", err)
+		}
+		fmt.Printf("Projects persisted in %v\n", time.Since(persistStart))
 	}
-	fmt.Printf("Projects persisted in %v\n", time.Since(persistStart))
 
 	fmt.Printf("Total execution time: %v\n", time.Since(start))
 	return nil
 }
 
 func handleRequest(ctx context.Context, event json.RawMessage) error {
+	if err := initProviders(); err != nil {
+		fmt.Printf("Initialization failed: %v\n", err)
+		return err
+	}
+
 	start := time.Now()
 	fmt.Printf("Starting request handling at: %v\n", start)
 	fmt.Printf("Received event: %s\n", string(event))
 
 	err := updateProjectsStatus(pipelineStateProvider, persistenceProvider)
 	if err != nil {
-		fmt.Printf("Error updating projects status after %v: %v\n", 
+		fmt.Printf("Error updating projects status after %v: %v\n",
 			time.Since(start), err)
 		return err
 	}

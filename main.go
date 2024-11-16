@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 
 	"github.com/aws/aws-lambda-go/lambda"
@@ -19,19 +18,25 @@ var (
 )
 
 func init() {
+	fmt.Println("Starting initialization")
 	// 在初始化阶段创建 AWS 客户端
 	cfg, err := config.LoadDefaultConfig(context.TODO())
 	if err != nil {
-		log.Fatalf("unable to load SDK config: %v", err)
+		fmt.Printf("unable to load SDK config: %v\n", err)
+		os.Exit(1)
 	}
 
 	s3Client = s3.NewFromConfig(cfg)
+	fmt.Println("Successfully created S3 client")
 	
 	// 获取环境变量
 	bucket := os.Getenv("BUCKET")
 	key := os.Getenv("KEY")
+	fmt.Printf("Environment variables - Bucket: %s, Key: %s\n", bucket, key)
+	
 	if bucket == "" || key == "" {
-		log.Fatalf("BUCKET and KEY environment variables must be set")
+		fmt.Println("BUCKET and KEY environment variables must be set")
+		os.Exit(1)
 	}
 
 	// 初始化 providers
@@ -41,37 +46,46 @@ func init() {
 		bucket,
 		key,
 	}
+	fmt.Println("Successfully initialized providers")
 }
 
 func updateProjectsStatus(stateProvider PipelineStateProvider, persistenceProvider PersistenceProvider) error {
-	log.Printf("Starting updateProjectsStatus")
+	fmt.Println("Starting updateProjectsStatus")
+	
+	fmt.Println("Fetching pipeline states...")
 	pipelineStates, err := stateProvider.GetPipelineState()
 	if err != nil {
-		log.Printf("Error getting pipeline state: %v", err)
+		fmt.Printf("Error getting pipeline state: %v\n", err)
 		return fmt.Errorf("unable to get state pipeline state: %v", err)
 	}
-	log.Printf("Successfully retrieved pipeline states")
+	fmt.Printf("Successfully retrieved %d pipeline states\n", len(pipelineStates))
 
-	err = persistenceProvider.PersistProjects(Convert(pipelineStates))
+	fmt.Println("Converting and persisting projects...")
+	projects := Convert(pipelineStates)
+	fmt.Printf("Converted to %d projects\n", len(projects))
+	
+	err = persistenceProvider.PersistProjects(projects)
 	if err != nil {
-		log.Printf("Error persisting projects: %v", err)
+		fmt.Printf("Error persisting projects: %v\n", err)
 		return fmt.Errorf("unable to persist projects data: %v", err)
 	}
-	log.Printf("Successfully persisted projects")
+	fmt.Println("Successfully persisted projects")
 
 	return nil
 }
 
 func handleRequest(ctx context.Context, event json.RawMessage) error {
-	log.Printf("Received event: %s", string(event))
+	fmt.Printf("Handling request with context: %v\n", ctx)
+	fmt.Printf("Received event: %s\n", string(event))
 
+	fmt.Println("Starting projects status update...")
 	err := updateProjectsStatus(pipelineStateProvider, persistenceProvider)
 	if err != nil {
-		log.Printf("Error updating projects status: %v", err)
+		fmt.Printf("Error updating projects status: %v\n", err)
 		return err
 	}
 
-	log.Printf("Successfully processed pipeline state update")
+	fmt.Println("Successfully completed request processing")
 	return nil
 }
 

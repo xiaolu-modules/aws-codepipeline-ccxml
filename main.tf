@@ -8,49 +8,90 @@ variable "key" {
 }
 
 resource "aws_s3_bucket" "ccxml" {
-  bucket = var.bucket
-  acl    = "public-read"
+  bucket        = var.bucket
+  force_destroy = true
+}
 
-  website {
-    index_document = "cc.xml"
+resource "aws_s3_bucket_website_configuration" "ccxml" {
+  bucket = aws_s3_bucket.ccxml.id
+
+  index_document {
+    suffix = "cc.xml"
   }
+}
+
+resource "aws_s3_bucket_versioning" "ccxml" {
+  bucket = aws_s3_bucket.ccxml.id
+  versioning_configuration {
+    status = "Disabled"
+  }
+}
+
+resource "aws_s3_bucket_ownership_controls" "ccxml" {
+  bucket = aws_s3_bucket.ccxml.id
+  rule {
+    object_ownership = "BucketOwnerPreferred"
+  }
+}
+
+resource "aws_s3_bucket_acl" "ccxml" {
+  depends_on = [aws_s3_bucket_ownership_controls.ccxml]
+  bucket     = aws_s3_bucket.ccxml.id
+  acl        = "public-read"
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "ccxml" {
+  bucket = aws_s3_bucket.ccxml.id
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "ccxml" {
+  bucket = aws_s3_bucket.ccxml.id
+
+  block_public_acls       = false
+  block_public_policy     = false
+  ignore_public_acls      = false
+  restrict_public_buckets = false
 }
 
 output "website" {
-  value = "http://${aws_s3_bucket.ccxml.website_endpoint}/${var.key}"
+  value = "http://${aws_s3_bucket_website_configuration.ccxml.website_endpoint}/${var.key}"
 }
 
-module "ccxml" {
-  source = "howdio/lambda/aws//modules/package"
-
-  name = "ccxml"
-  path = path.cwd
-}
 
 resource "null_resource" "cctest" {
   provisioner "local-exec" {
-    command = "go get && GOOS=linux GOARCH=amd64 go build -o ccxml"
+    working_dir = path.module
+    command     = <<EOF
+      GOOS=linux GOARCH=amd64 go build -mod=vendor -o bootstrap && \
+      chmod +x bootstrap
+    EOF
   }
+
   triggers = {
-    source_file = base64sha256("${path.cwd}/src/main.go")
+    force_run = uuid()
   }
 }
 
 data "archive_file" "lambda_zip" {
-  type        = "zip"
-  source_file = "${path.cwd}/ccxml"
-  output_path = "${path.cwd}/package.zip"
   depends_on  = [null_resource.cctest]
+  type        = "zip"
+  source_file = "${path.module}/bootstrap"
+  output_path = "${path.module}/bootstrap.zip"
 }
 
 resource "aws_lambda_function" "ccxml" {
   filename         = data.archive_file.lambda_zip.output_path
   function_name    = "ccxml"
-  handler          = "ccxml"
+  handler          = "bootstrap"
   description      = "Handler that responds to CodePipeline events by updating a CCTray XML feed"
   memory_size      = 128
   timeout          = 20
-  runtime          = "go1.x"
+  runtime          = "provided.al2"
   source_code_hash = data.archive_file.lambda_zip.output_base64sha256
   role             = aws_iam_role.ccxml.arn
 
@@ -139,10 +180,10 @@ locals {
 }
 
 resource "aws_cloudwatch_event_rule" "ccxml" {
-  name        = "ccxml"
-  description = "Rule that matches CodePipeline State Execution State Changes"
-
-  event_pattern = local.event_pattern_json
+  name           = "ccxml"
+  description    = "Rule that matches CodePipeline State Execution State Changes"
+  event_pattern  = local.event_pattern_json
+  event_bus_name = "default"
 }
 
 resource "aws_cloudwatch_event_target" "ccxml" {
@@ -157,4 +198,13 @@ resource "aws_lambda_permission" "ccxml" {
   function_name = aws_lambda_function.ccxml.function_name
   principal     = "events.amazonaws.com"
   source_arn    = aws_cloudwatch_event_rule.ccxml.arn
+}
+
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = ">= 5.31.0"
+    }
+  }
 }

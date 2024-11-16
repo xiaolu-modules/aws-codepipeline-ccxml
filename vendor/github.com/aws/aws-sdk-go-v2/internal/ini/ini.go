@@ -1,51 +1,56 @@
+// Package ini implements parsing of the AWS shared config file.
+//
+//	Example:
+//	sections, err := ini.OpenFile("/path/to/file")
+//	if err != nil {
+//		panic(err)
+//	}
+//
+//	profile := "foo"
+//	section, ok := sections.GetSection(profile)
+//	if !ok {
+//		fmt.Printf("section %q could not be found", profile)
+//	}
 package ini
 
 import (
+	"fmt"
 	"io"
 	"os"
-
-	"github.com/aws/aws-sdk-go-v2/aws/awserr"
+	"strings"
 )
 
-// OpenFile takes a path to a given file, and will open  and parse
-// that file.
-func OpenFile(path string) (Sections, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return Sections{}, awserr.New(ErrCodeUnableToReadFile, "unable to open file", err)
+// OpenFile parses shared config from the given file path.
+func OpenFile(path string) (sections Sections, err error) {
+	f, oerr := os.Open(path)
+	if oerr != nil {
+		return Sections{}, &UnableToReadFile{Err: oerr}
 	}
-	defer f.Close()
 
-	return Parse(f)
+	defer func() {
+		closeErr := f.Close()
+		if err == nil {
+			err = closeErr
+		} else if closeErr != nil {
+			err = fmt.Errorf("close error: %v, original error: %w", closeErr, err)
+		}
+	}()
+
+	return Parse(f, path)
 }
 
-// Parse will parse the given file using the shared config
-// visitor.
-func Parse(f io.Reader) (Sections, error) {
-	tree, err := ParseAST(f)
+// Parse parses shared config from the given reader.
+func Parse(r io.Reader, path string) (Sections, error) {
+	contents, err := io.ReadAll(r)
 	if err != nil {
-		return Sections{}, err
+		return Sections{}, fmt.Errorf("read all: %v", err)
 	}
 
-	v := NewDefaultVisitor()
-	if err = Walk(tree, v); err != nil {
-		return Sections{}, err
-	}
-
-	return v.Sections, nil
-}
-
-// ParseBytes will parse the given bytes and return the parsed sections.
-func ParseBytes(b []byte) (Sections, error) {
-	tree, err := ParseASTBytes(b)
+	lines := strings.Split(string(contents), "\n")
+	tokens, err := tokenize(lines)
 	if err != nil {
-		return Sections{}, err
+		return Sections{}, fmt.Errorf("tokenize: %v", err)
 	}
 
-	v := NewDefaultVisitor()
-	if err = Walk(tree, v); err != nil {
-		return Sections{}, err
-	}
-
-	return v.Sections, nil
+	return parse(tokens, path), nil
 }

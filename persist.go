@@ -9,6 +9,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/google/renameio"
 )
 
@@ -29,20 +30,16 @@ func (p *AWSS3PersistenceProvider) PersistProjects(projects []Project) error {
 	var b bytes.Buffer
 	Encode(projects, bufio.NewWriter(&b))
 
-	svc := s3.New(p.config)
+	svc := s3.NewFromConfig(p.config)
 
-	cacheControl := "no-cache"
-	contentType := "text/xml"
-	req := svc.PutObjectRequest(&s3.PutObjectInput{
-		ACL:          s3.ObjectCannedACLPublicRead,
-		CacheControl: &cacheControl,
-		ContentType:  &contentType,
-		Body:         bytes.NewReader(b.Bytes()),
-		Bucket:       &p.bucket,
-		Key:          &p.key,
-	})
+	input := &s3.PutObjectInput{
+		Bucket: aws.String(p.bucket),
+		Key:    aws.String(p.key),
+		Body:   bytes.NewReader(b.Bytes()),
+			ACL:    types.ObjectCannedACLPublicRead,
+	}
 
-	_, err := req.Send(context.Background())
+	_, err := svc.PutObject(context.TODO(), input)
 	if err != nil {
 		return fmt.Errorf("unable to persist to S3 s3://%s/%s: %v", p.bucket, p.key, err)
 	}

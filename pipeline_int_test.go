@@ -5,11 +5,11 @@ package main
 import (
 	"testing"
 
-	"github.com/aws/aws-sdk-go-v2/aws/external"
+	"github.com/aws/aws-sdk-go-v2/config"
 )
 
 func TestAWSGetPipelineState(t *testing.T) {
-	cfg, err := external.LoadDefaultAWSConfig()
+	cfg, err := config.LoadDefaultConfig(context.TODO())
 	if err != nil {
 		t.Errorf("TestAWSGetPipelineState() unable to load AWS config: %v", err)
 	}

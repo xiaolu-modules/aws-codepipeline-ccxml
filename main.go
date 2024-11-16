@@ -2,92 +2,79 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 
-	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-	"github.com/aws/aws-sdk-go-v2/aws/external"
-	"gopkg.in/alecthomas/kingpin.v2"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
 var (
-	bucket   = kingpin.Flag("bucket", "The S3 bucket to write data to").Envar("BUCKET").String()
-	key      = kingpin.Flag("key", "The S3 bucket key to write data to").Envar("KEY").Default("cc.xml").String()
-	file     = kingpin.Flag("file", "The file to write to").String()
-	isLambda = kingpin.Flag("lambda", "To run as a lambda").Default("true").Bool()
+	s3Client *s3.Client
+	pipelineStateProvider *AWSPipelineStateProvider
+	persistenceProvider *AWSS3PersistenceProvider
 )
 
+func init() {
+	// 在初始化阶段创建 AWS 客户端
+	cfg, err := config.LoadDefaultConfig(context.TODO())
+	if err != nil {
+		log.Fatalf("unable to load SDK config: %v", err)
+	}
+
+	s3Client = s3.NewFromConfig(cfg)
+	
+	// 获取环境变量
+	bucket := os.Getenv("BUCKET")
+	key := os.Getenv("KEY")
+	if bucket == "" || key == "" {
+		log.Fatalf("BUCKET and KEY environment variables must be set")
+	}
+
+	// 初始化 providers
+	pipelineStateProvider = &AWSPipelineStateProvider{cfg}
+	persistenceProvider = &AWSS3PersistenceProvider{
+		cfg,
+		bucket,
+		key,
+	}
+}
+
 func updateProjectsStatus(stateProvider PipelineStateProvider, persistenceProvider PersistenceProvider) error {
+	log.Printf("Starting updateProjectsStatus")
 	pipelineStates, err := stateProvider.GetPipelineState()
 	if err != nil {
+		log.Printf("Error getting pipeline state: %v", err)
 		return fmt.Errorf("unable to get state pipeline state: %v", err)
 	}
+	log.Printf("Successfully retrieved pipeline states")
 
 	err = persistenceProvider.PersistProjects(Convert(pipelineStates))
 	if err != nil {
+		log.Printf("Error persisting projects: %v", err)
 		return fmt.Errorf("unable to persist projects data: %v", err)
 	}
+	log.Printf("Successfully persisted projects")
 
 	return nil
 }
 
-// HandleRequest is triggered when the Lambda receives an event
-func HandleRequest(ctx context.Context, event events.CodePipelineEvent) (string, error) {
-	cfg, err := external.LoadDefaultAWSConfig()
+func handleRequest(ctx context.Context, event json.RawMessage) error {
+	log.Printf("Received event: %s", string(event))
+
+	err := updateProjectsStatus(pipelineStateProvider, persistenceProvider)
 	if err != nil {
-		return "", err
-	}
-
-	psp := AWSPipelineStateProvider{cfg}
-	s3pp := AWSS3PersistenceProvider{cfg, *bucket, *key}
-
-	err = updateProjectsStatus(&psp, &s3pp)
-	if err != nil {
-		return "", err
-	}
-
-	return "Done", nil
-}
-
-func runLocally() error {
-	var persistenceProvider PersistenceProvider
-
-	cfg, err := external.LoadDefaultAWSConfig()
-	if err != nil {
+		log.Printf("Error updating projects status: %v", err)
 		return err
 	}
 
-	if *file != "" {
-		persistenceProvider = &FilePersistenceProvider{*file}
-	} else {
-		if *bucket == "" || *key == "" {
-			log.Fatal("must either specify the bucket name and key or file")
-		}
-
-		persistenceProvider = &AWSS3PersistenceProvider{cfg, *bucket, *key}
-	}
-
-	psp := AWSPipelineStateProvider{cfg}
-
-	err = updateProjectsStatus(&psp, persistenceProvider)
-
-	return err
+	log.Printf("Successfully processed pipeline state update")
+	return nil
 }
 
 func main() {
-	kingpin.Version("0.1.0")
-	kingpin.Parse()
-
-	if *isLambda {
-		if *bucket == "" || *key == "" {
-			log.Fatal("must specify the bucket name and key")
-		}
-		lambda.Start(HandleRequest)
-	} else {
-		err := runLocally()
-		if err != nil {
-			log.Fatalf("failed to update project status: %v", err)
-		}
-	}
+	lambda.Start(handleRequest)
 }

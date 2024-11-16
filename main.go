@@ -49,42 +49,54 @@ func init() {
 }
 
 func updateProjectsStatus(stateProvider PipelineStateProvider, persistenceProvider PersistenceProvider) error {
-	fmt.Println("Starting updateProjectsStatus")
+	start := time.Now()
+	fmt.Printf("Starting updateProjectsStatus at: %v\n", start)
 	
+	// 跟踪获取pipeline状态的时间
+	pipelineFetchStart := time.Now()
 	fmt.Println("Fetching pipeline states...")
 	pipelineStates, err := stateProvider.GetPipelineState()
 	if err != nil {
 		fmt.Printf("Error getting pipeline state: %v\n", err)
 		return fmt.Errorf("unable to get state pipeline state: %v", err)
 	}
-	fmt.Printf("Successfully retrieved %d pipeline states\n", len(pipelineStates))
+	fmt.Printf("Pipeline states fetched in %v, got %d states\n", 
+		time.Since(pipelineFetchStart), len(pipelineStates))
 
-	fmt.Println("Converting and persisting projects...")
+	// 跟踪转换时间
+	convertStart := time.Now()
+	fmt.Println("Converting pipeline states to projects...")
 	projects := Convert(pipelineStates)
-	fmt.Printf("Converted to %d projects\n", len(projects))
+	fmt.Printf("Conversion completed in %v, got %d projects\n", 
+		time.Since(convertStart), len(projects))
 	
+	// 跟踪持久化时间
+	persistStart := time.Now()
+	fmt.Println("Persisting projects to S3...")
 	err = persistenceProvider.PersistProjects(projects)
 	if err != nil {
 		fmt.Printf("Error persisting projects: %v\n", err)
 		return fmt.Errorf("unable to persist projects data: %v", err)
 	}
-	fmt.Println("Successfully persisted projects")
+	fmt.Printf("Projects persisted in %v\n", time.Since(persistStart))
 
+	fmt.Printf("Total execution time: %v\n", time.Since(start))
 	return nil
 }
 
 func handleRequest(ctx context.Context, event json.RawMessage) error {
-	fmt.Printf("Handling request with context: %v\n", ctx)
+	start := time.Now()
+	fmt.Printf("Starting request handling at: %v\n", start)
 	fmt.Printf("Received event: %s\n", string(event))
 
-	fmt.Println("Starting projects status update...")
 	err := updateProjectsStatus(pipelineStateProvider, persistenceProvider)
 	if err != nil {
-		fmt.Printf("Error updating projects status: %v\n", err)
+		fmt.Printf("Error updating projects status after %v: %v\n", 
+			time.Since(start), err)
 		return err
 	}
 
-	fmt.Println("Successfully completed request processing")
+	fmt.Printf("Request completed successfully in %v\n", time.Since(start))
 	return nil
 }
 

@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -27,6 +28,9 @@ type AWSS3PersistenceProvider struct {
 
 // PersistProjects to an S3 bucket
 func (p *AWSS3PersistenceProvider) PersistProjects(projects []Project) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
 	var b bytes.Buffer
 	Encode(projects, bufio.NewWriter(&b))
 
@@ -36,10 +40,10 @@ func (p *AWSS3PersistenceProvider) PersistProjects(projects []Project) error {
 		Bucket: aws.String(p.bucket),
 		Key:    aws.String(p.key),
 		Body:   bytes.NewReader(b.Bytes()),
-			ACL:    types.ObjectCannedACLPublicRead,
+		ACL:    types.ObjectCannedACLPublicRead,
 	}
 
-	_, err := svc.PutObject(context.TODO(), input)
+	_, err := svc.PutObject(ctx, input)
 	if err != nil {
 		return fmt.Errorf("unable to persist to S3 s3://%s/%s: %v", p.bucket, p.key, err)
 	}

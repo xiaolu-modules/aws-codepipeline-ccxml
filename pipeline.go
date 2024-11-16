@@ -30,9 +30,12 @@ type AWSPipelineStateProvider struct {
 
 // GetPipelineState provides access to the current state of a pipeline using the AWS API
 func (p *AWSPipelineStateProvider) GetPipelineState() ([]PipelineState, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
 	client := codepipeline.NewFromConfig(p.config)
 
-	resp, err := client.ListPipelines(context.Background(), &codepipeline.ListPipelinesInput{})
+	resp, err := client.ListPipelines(ctx, &codepipeline.ListPipelinesInput{})
 	if err != nil {
 		return nil, err
 	}
@@ -40,7 +43,7 @@ func (p *AWSPipelineStateProvider) GetPipelineState() ([]PipelineState, error) {
 	pipelineStates := make([]PipelineState, 0)
 
 	for _, pipeline := range resp.Pipelines {
-		 stageStates, err := client.GetPipelineState(context.Background(), &codepipeline.GetPipelineStateInput{
+		 stageStates, err := client.GetPipelineState(ctx, &codepipeline.GetPipelineStateInput{
 			Name: pipeline.Name,
 		})
 		if err != nil {

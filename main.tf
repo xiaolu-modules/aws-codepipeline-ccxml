@@ -89,8 +89,8 @@ resource "aws_lambda_function" "ccxml" {
   function_name    = "ccxml"
   handler          = "bootstrap"
   description      = "Handler that responds to CodePipeline events by updating a CCTray XML feed"
-  memory_size      = 128
-  timeout          = 20
+  memory_size      = 256
+  timeout          = 30
   runtime          = "provided.al2"
   source_code_hash = data.archive_file.lambda_zip.output_base64sha256
   role             = aws_iam_role.ccxml.arn

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -12,23 +13,22 @@ import (
 )
 
 var (
-	s3Client *s3.Client
 	pipelineStateProvider *AWSPipelineStateProvider
 	persistenceProvider *AWSS3PersistenceProvider
 )
 
 func init() {
-	fmt.Println("Starting initialization")
+	start := time.Now()
+	fmt.Printf("Starting initialization at: %v\n", start)
+	
 	// 在初始化阶段创建 AWS 客户端
 	cfg, err := config.LoadDefaultConfig(context.TODO())
 	if err != nil {
 		fmt.Printf("unable to load SDK config: %v\n", err)
 		os.Exit(1)
 	}
+	fmt.Printf("Config loaded, time elapsed: %v\n", time.Since(start))
 
-	s3Client = s3.NewFromConfig(cfg)
-	fmt.Println("Successfully created S3 client")
-	
 	// 获取环境变量
 	bucket := os.Getenv("BUCKET")
 	key := os.Getenv("KEY")
@@ -46,7 +46,7 @@ func init() {
 		bucket,
 		key,
 	}
-	fmt.Println("Successfully initialized providers")
+	fmt.Printf("Successfully initialized providers, total init time: %v\n", time.Since(start))
 }
 
 func updateProjectsStatus(stateProvider PipelineStateProvider, persistenceProvider PersistenceProvider) error {

@@ -1,58 +1,93 @@
-variable "bucket" {
-  description = "The bucket that will contain the feed"
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = ">= 4.0"
+    }
+    archive = {
+      source  = "hashicorp/archive"
+      version = ">= 2.0"
+    }
+  }
 }
 
-variable "key" {
-  description = "The key within the bucket that will contain the feed"
-  default     = "cc.xml"
+locals {
+  lambda_src_path = "${path.module}/aws-codepipeline-ccxml"
+  binary_path     = "${path.module}/dist"
+  event_pattern = {
+    source      = ["aws.codepipeline"]
+    detail-type = ["CodePipeline Stage Execution State Change"]
+  }
 }
 
 resource "aws_s3_bucket" "ccxml" {
   bucket = var.bucket
-  acl    = "public-read"
+  tags   = var.tags
+}
 
-  website {
-    index_document = "cc.xml"
+resource "aws_s3_bucket_public_access_block" "ccxml" {
+  bucket = aws_s3_bucket.ccxml.id
+
+  block_public_acls       = false
+  block_public_policy     = false
+  ignore_public_acls      = false
+  restrict_public_buckets = false
+}
+
+resource "aws_s3_bucket_ownership_controls" "ccxml" {
+  bucket = aws_s3_bucket.ccxml.id
+  rule {
+    object_ownership = "BucketOwnerPreferred"
   }
 }
 
-output "website" {
-  value = "http://${aws_s3_bucket.ccxml.website_endpoint}/${var.key}"
+resource "aws_s3_bucket_acl" "ccxml" {
+  depends_on = [
+    aws_s3_bucket_public_access_block.ccxml,
+    aws_s3_bucket_ownership_controls.ccxml,
+  ]
+
+  bucket = aws_s3_bucket.ccxml.id
+  acl    = "public-read"
 }
 
-module "ccxml" {
-  source = "howdio/lambda/aws//modules/package"
+resource "aws_s3_bucket_website_configuration" "ccxml" {
+  bucket = aws_s3_bucket.ccxml.id
 
-  name = "ccxml"
-  path = path.cwd
+  index_document {
+    suffix = var.key
+  }
 }
 
 resource "null_resource" "cctest" {
-  provisioner "local-exec" {
-    command = "go get && GOOS=linux GOARCH=amd64 go build -o ccxml"
-  }
   triggers = {
-    source_file = base64sha256("${path.cwd}/src/main.go")
+    source_code_hash = filebase64sha256("${local.lambda_src_path}/main.go")
+    uuid             = uuid()
+  }
+
+  provisioner "local-exec" {
+    command = "cd ${local.lambda_src_path} && mkdir -p dist && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o dist/bootstrap"
   }
 }
 
 data "archive_file" "lambda_zip" {
-  type        = "zip"
-  source_file = "${path.cwd}/ccxml"
-  output_path = "${path.cwd}/package.zip"
   depends_on  = [null_resource.cctest]
+  type        = "zip"
+  source_file = "${local.lambda_src_path}/dist/bootstrap"
+  output_path = "${path.module}/package.zip"
 }
 
 resource "aws_lambda_function" "ccxml" {
   filename         = data.archive_file.lambda_zip.output_path
-  function_name    = "ccxml"
-  handler          = "ccxml"
+  function_name    = var.function_name
+  handler          = "bootstrap"
   description      = "Handler that responds to CodePipeline events by updating a CCTray XML feed"
-  memory_size      = 128
-  timeout          = 20
-  runtime          = "go1.x"
+  memory_size      = var.memory_size
+  timeout          = var.timeout
+  runtime          = "provided.al2"
   source_code_hash = data.archive_file.lambda_zip.output_base64sha256
-  role             = aws_iam_role.ccxml.arn
+  role            = aws_iam_role.ccxml.arn
+  tags            = var.tags
 
   environment {
     variables = {
@@ -69,7 +104,6 @@ data "aws_iam_policy_document" "ccxml_assume_role_policy" {
 
     principals {
       type = "Service"
-
       identifiers = [
         "lambda.amazonaws.com",
       ]
@@ -78,7 +112,8 @@ data "aws_iam_policy_document" "ccxml_assume_role_policy" {
 }
 
 resource "aws_iam_role" "ccxml" {
-  name = "ccxml"
+  name = var.function_name
+  tags = var.tags
 
   assume_role_policy = data.aws_iam_policy_document.ccxml_assume_role_policy.json
 }
@@ -86,25 +121,19 @@ resource "aws_iam_role" "ccxml" {
 data "aws_iam_policy_document" "ccxml_role_policy" {
   statement {
     effect = "Allow"
-
     actions = [
       "codepipeline:ListPipelines",
       "codepipeline:GetPipelineState",
     ]
-
-    resources = [
-      "*",
-    ]
+    resources = ["*"]
   }
 
   statement {
     effect = "Allow"
-
     actions = [
       "s3:PutObject",
       "s3:PutObjectAcl",
     ]
-
     resources = [
       "arn:aws:s3:::${var.bucket}/${var.key}",
     ]
@@ -112,41 +141,32 @@ data "aws_iam_policy_document" "ccxml_role_policy" {
 
   statement {
     effect = "Allow"
-
     actions = [
-      "logs:*",
+      "logs:CreateLogGroup",
+      "logs:CreateLogStream",
+      "logs:PutLogEvents",
     ]
-
     resources = [
-      "*",
+      "arn:aws:logs:*:*:log-group:/aws/lambda/${var.function_name}:*",
     ]
   }
 }
 
 resource "aws_iam_role_policy" "ccxml" {
-  role = aws_iam_role.ccxml.id
-
+  role   = aws_iam_role.ccxml.id
   policy = data.aws_iam_policy_document.ccxml_role_policy.json
 }
 
-locals {
-  event_pattern = {
-    source      = ["aws.codepipeline"]
-    detail-type = ["CodePipeline Stage Execution State Change"]
-  }
-
-  event_pattern_json = jsonencode(local.event_pattern)
-}
-
 resource "aws_cloudwatch_event_rule" "ccxml" {
-  name        = "ccxml"
+  name        = var.function_name
   description = "Rule that matches CodePipeline State Execution State Changes"
+  tags        = var.tags
 
-  event_pattern = local.event_pattern_json
+  event_pattern = jsonencode(local.event_pattern)
 }
 
 resource "aws_cloudwatch_event_target" "ccxml" {
-  target_id = "ccxml"
+  target_id = var.function_name
   rule      = aws_cloudwatch_event_rule.ccxml.name
   arn       = aws_lambda_function.ccxml.arn
 }
@@ -157,4 +177,8 @@ resource "aws_lambda_permission" "ccxml" {
   function_name = aws_lambda_function.ccxml.function_name
   principal     = "events.amazonaws.com"
   source_arn    = aws_cloudwatch_event_rule.ccxml.arn
+}
+
+output "website" {
+  value = "http://${aws_s3_bucket_website_configuration.ccxml.website_endpoint}/${var.key}"
 }

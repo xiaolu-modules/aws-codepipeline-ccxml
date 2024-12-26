@@ -65,14 +65,14 @@ resource "null_resource" "cctest" {
   }
 
   provisioner "local-exec" {
-    command = "cd ${local.lambda_src_path} && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o bootstrap && mkdir -p ${path.module}/dist && cp bootstrap ${path.module}/dist/"
+    command = "cd ${local.lambda_src_path} && mkdir -p dist && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o dist/bootstrap
   }
 }
 
 data "archive_file" "lambda_zip" {
   depends_on  = [null_resource.cctest]
   type        = "zip"
-  source_file = "${path.module}/dist/bootstrap"
+  source_file = "${local.lambda_src_path}/dist/bootstrap"
   output_path = "${path.module}/package.zip"
 }
 

@@ -65,7 +65,7 @@ resource "null_resource" "cctest" {
   }
 
   provisioner "local-exec" {
-    command = "cd ${local.lambda_src_path} && mkdir -p dist && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o dist/bootstrap
+    command = "cd ${local.lambda_src_path} && mkdir -p dist && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o dist/bootstrap"
   }
 }
 

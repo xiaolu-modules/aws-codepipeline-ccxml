@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/codepipeline/types"
@@ -39,6 +40,7 @@ func Convert(pipelineStates []PipelineState) []Project {
 			LastBuildStatus: lastBuildStatus,
 			Activity:        activity,
 			LastBuildTime:   lastBuildTime.Format(time.RFC3339),
+			WebURL:         fmt.Sprintf("https://%s.console.aws.amazon.com/codesuite/codepipeline/pipelines/%s/view", pipeline.Region, pipeline.Name),
 		})
 	}
 

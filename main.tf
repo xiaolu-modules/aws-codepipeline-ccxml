@@ -1,32 +1,3 @@
-variable "bucket" {
-  description = "The bucket that will contain the feed"
-}
-
-variable "key" {
-  description = "The key within the bucket that will contain the feed"
-  default     = "cc.xml"
-}
-
-variable "tags" {
-  type        = map(string)
-  description = "A map of tags to add to all resources"
-  default     = {}
-}
-
-variable "function_name" {
-  description = "The name of the Lambda function"
-  default     = "ccxml"
-}
-
-variable "memory_size" {
-  description = "The amount of memory to allocate to the Lambda function"
-  default     = 512
-}
-
-variable "timeout" {
-  description = "The timeout for the Lambda function"
-  default     = 60
-}
 
 terraform {
   required_providers {

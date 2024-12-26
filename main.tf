@@ -61,7 +61,7 @@ resource "aws_s3_bucket_website_configuration" "ccxml" {
 
 resource "null_resource" "cctest" {
   triggers = {
-    uuid = uuid()
+    source_code_hash = filebase64sha256("${local.lambda_src_path}/main.go")
   }
 
   provisioner "local-exec" {

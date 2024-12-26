@@ -61,7 +61,7 @@ resource "aws_s3_bucket_website_configuration" "ccxml" {
 
 resource "null_resource" "cctest" {
   triggers = {
-    source_code_hash = uuid()
+    uuid = uuid()
   }
 
   provisioner "local-exec" {

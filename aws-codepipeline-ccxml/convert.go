@@ -12,22 +12,38 @@ func Convert(pipelineStates []PipelineState) []Project {
 	projects := make([]Project, 0)
 
 	for _, pipeline := range pipelineStates {
+		lastBuildStatus := LastBuildStatusSuccess
+		activity := ActivitySleeping
+		var lastBuildTime time.Time
+
+		// 检查所有阶段的状态
 		for _, stage := range pipeline.StageStates {
-			projects = append(projects,
-				Project{
-					Name:            buildName(pipeline.Name, stage),
-					LastBuildStatus: buildLastBuildStatus(stage),
-					Activity:        buildActivity(stage),
-					LastBuildTime:   buildLastBuildTime(pipeline.Created, stage),
-				})
+			stageStatus := buildLastBuildStatus(stage)
+			if stageStatus == LastBuildStatusFailure {
+				lastBuildStatus = LastBuildStatusFailure
+			}
+
+			stageActivity := buildActivity(stage)
+			if stageActivity == ActivityBuilding {
+				activity = ActivityBuilding
+			}
+
+			// 获取最新的构建时间
+			stageTime := getStageTime(pipeline.Created, stage)
+			if stageTime.After(lastBuildTime) {
+				lastBuildTime = stageTime
+			}
 		}
+
+		projects = append(projects, Project{
+			Name:            pipeline.Name,
+			LastBuildStatus: lastBuildStatus,
+			Activity:        activity,
+			LastBuildTime:   lastBuildTime.Format(time.RFC3339),
+		})
 	}
 
 	return projects
-}
-
-func buildName(name string, stage types.StageState) string {
-	return fmt.Sprintf("%s :: %s", name, *stage.StageName)
 }
 
 func buildLastBuildStatus(stage types.StageState) LastBuildStatus {
@@ -54,12 +70,10 @@ func buildActivity(stage types.StageState) Activity {
 	return ActivitySleeping
 }
 
-func buildLastBuildTime(created time.Time, stage types.StageState) string {
+func getStageTime(created time.Time, stage types.StageState) time.Time {
 	if stage.ActionStates == nil || len(stage.ActionStates) == 0 ||
 		stage.ActionStates[0].LatestExecution == nil || stage.ActionStates[0].LatestExecution.LastStatusChange == nil {
-		// assume last action was time pipeline was created
-		return created.Format(time.RFC3339)
+		return created
 	}
-
-	return stage.ActionStates[0].LatestExecution.LastStatusChange.Format(time.RFC3339)
+	return *stage.ActionStates[0].LatestExecution.LastStatusChange
 }

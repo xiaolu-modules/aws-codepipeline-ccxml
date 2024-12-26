@@ -1,4 +1,3 @@
-
 terraform {
   required_providers {
     aws = {
@@ -14,7 +13,7 @@ terraform {
 
 locals {
   lambda_src_path = "${path.module}/aws-codepipeline-ccxml"
-  binary_path     = "${path.module}/bootstrap"
+  binary_path     = "${path.module}/dist"
   event_pattern = {
     source      = ["aws.codepipeline"]
     detail-type = ["CodePipeline Stage Execution State Change"]
@@ -66,14 +65,14 @@ resource "null_resource" "cctest" {
   }
 
   provisioner "local-exec" {
-    command = "cd ${local.lambda_src_path} && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ${local.binary_path}"
+    command = "cd ${local.lambda_src_path} && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o bootstrap && mkdir -p ${path.module}/dist && cp bootstrap ${path.module}/dist/"
   }
 }
 
 data "archive_file" "lambda_zip" {
   depends_on  = [null_resource.cctest]
   type        = "zip"
-  source_file = local.binary_path
+  source_file = "${path.module}/dist/bootstrap"
   output_path = "${path.module}/package.zip"
 }
 

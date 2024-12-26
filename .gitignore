@@ -4,3 +4,4 @@ terraform.tfstate*
 ccxml
 package.zip
 bootstrap
+dist/
